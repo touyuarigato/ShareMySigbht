@@ -1,0 +1,1229 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Share My Sight - 視覚サポートマッチング</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  /* ===== 基本設定 (安定版) ===== */
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  
+  body {
+    margin: 0;
+    padding: 0;
+    background-color: #ece9e6;
+    font-family: "Helvetica Neue", Arial, "Hiragino Kaku Gothic ProN", "Hiragino Sans", sans-serif;
+    color: #333;
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.6;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+  }
+
+  .container-app {
+    width: 100%;
+    /* タブレットでも見やすいよう幅を広めに確保 */
+    max-width: 600px;
+    height: 100vh;
+    background: #f7efe3;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 0 25px rgba(0,0,0,0.15);
+  }
+
+  /* 画面ごとのスタイル */
+  .screen {
+    display: none; /* 初期状態は非表示 */
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 24px;
+    padding-bottom: 120px; /* ナビバー分 */
+    background: #f7efe3;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+  }
+
+  /* アクティブな画面だけ表示 */
+  .screen.active {
+    display: flex;
+    animation: fadeIn 0.3s ease-out;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* マッチング画面専用スタイル（縦スクロール禁止 & フレックスレイアウト） */
+  #matchScreen.active {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden; /* 画面全体のスクロールを禁止 */
+    padding-bottom: 100px;
+  }
+
+  h1 { text-align: center; font-size: 24px; font-weight: bold; margin: 20px 0; color: #444; flex-shrink: 0; }
+
+  /* ===== ナビゲーションバー ===== */
+  .nav {
+    display: none; /* 初期状態は非表示 */
+    position: absolute; bottom: 0; left: 0; width: 100%; height: 80px;
+    background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px);
+    border-top: 1px solid rgba(0,0,0,0.05); justify-content: space-evenly;
+    align-items: center; padding-bottom: 10px; box-shadow: 0 -4px 10px rgba(0,0,0,0.05);
+    z-index: 100;
+  }
+  .nav.active { display: flex; }
+
+  .nav-item { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 20%; cursor: pointer; color: #888; transition: transform 0.1s; }
+  .nav-icon { font-size: 24px; margin-bottom: 2px; }
+  .nav-label { font-size: 10px; font-weight: bold; }
+  .nav-item:active { transform: scale(0.9); }
+  .nav-item.active { color: #ff6b81; }
+
+  /* ===== コンポーネント ===== */
+  .input-group { margin-bottom: 24px; text-align: center; width: 100%; }
+  .input-label { display: block; font-size: 18px; font-weight: bold; margin-bottom: 12px; color: #555; }
+  .text-input { width: 100%; padding: 16px; font-size: 18px; border: 2px solid #ddd; border-radius: 16px; outline: none; text-align: center; background: white; }
+  .text-input:focus { border-color: #ff6b81; }
+
+  .primary-btn {
+    width: 100%; padding: 18px; font-size: 18px; font-weight: bold; color: white;
+    background: #ff6b81; border: none; border-radius: 20px; cursor: pointer;
+    box-shadow: 0 4px 10px rgba(255, 107, 129, 0.4); transition: transform 0.1s;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+  }
+  .primary-btn:active { transform: scale(0.98); }
+  .primary-btn:disabled { background: #ccc; box-shadow: none; cursor: not-allowed; opacity: 0.6; pointer-events: none; }
+
+  .role-btn {
+    width: 100%; padding: 24px; margin-bottom: 20px; background: white; border: 2px solid #ffdde3;
+    border-radius: 20px; text-align: left; cursor: pointer; display: flex; align-items: center;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.05);
+  }
+  .role-btn:active { transform: scale(0.98); background: #fff0f3; }
+  .role-btn-icon { font-size: 32px; margin-right: 16px; width: 50px; text-align: center; }
+  .role-btn-title { font-size: 18px; font-weight: bold; color: #ff6b81; display: block; }
+  .role-btn-desc { font-size: 14px; color: #555; }
+
+  .hobby-grid { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-bottom: 30px; }
+  .hobby-choice { padding: 12px 20px; background: white; border: 2px solid #ffdde3; border-radius: 30px; font-size: 16px; color: #555; cursor: pointer; }
+  .hobby-choice.selected { background: #ff6b81; color: white; border-color: #ff6b81; box-shadow: 0 4px 8px rgba(255, 107, 129, 0.3); }
+
+  /* ===== リスト表示 (横スクロール修正版) ===== */
+  .match-header-text {
+    text-align: center; color: #444; font-size: 16px; font-weight: bold;
+    margin-bottom: 10px; background: #e6f0ff; padding: 10px; border-radius: 10px;
+    flex-shrink: 0;
+  }
+  
+  /* カードが見切れないようにパディングを調整 */
+  .match-scroll-area {
+    display: flex; 
+    gap: 20px; 
+    overflow-x: auto; 
+    overflow-y: hidden; /* 縦スクロール禁止 */
+    padding: 20px 20px 50px 20px; /* 下部余白を確保して影を表示 */
+    scroll-snap-type: x mandatory; 
+    -webkit-overflow-scrolling: touch;
+    width: 100%;
+    align-items: center; /* 垂直方向中央配置 */
+    flex: 1;
+  }
+  .match-scroll-area::-webkit-scrollbar { display: none; }
+
+  .match-card {
+    background: white; border-radius: 24px; padding: 16px; 
+    box-shadow: 0 10px 20px rgba(0,0,0,0.08); cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; text-align: center;
+    border: 2px solid transparent; position: relative; flex-shrink: 0;
+  }
+  .match-card.best-match { border-color: #ff6b81; background: #fff5f7; }
+  .match-card:active { transform: scale(0.98); }
+  
+  /* カードサイズ調整：高さ制限を外し、内容に合わせて伸縮させる */
+  .match-scroll-area .match-card { 
+    width: 280px; 
+    height: auto; 
+    min-height: 400px;
+    scroll-snap-align: center; 
+    margin-bottom: 0; 
+  }
+  
+  .favorite-list .match-card { width: 100%; height: auto; flex-direction: row; padding: 16px; text-align: left; border: 2px solid #eee; margin-bottom: 16px; }
+
+  .card-img-placeholder {
+    width: 100%; height: 180px; border-radius: 20px;
+    background: linear-gradient(135deg, #cce7ff 0%, #eaf6ff 100%);
+    display: flex; align-items: center; justify-content: center; font-size: 50px; margin-bottom: 12px;
+  }
+  .favorite-list .card-img-placeholder { width: 80px; height: 80px; font-size: 36px; margin-right: 16px; border-radius: 16px; flex-shrink: 0; }
+  
+  .match-badge {
+    position: absolute; top: 10px; right: 10px; background: #ff6b81;
+    color: white; font-size: 12px; font-weight: bold; padding: 4px 8px;
+    border-radius: 10px; z-index: 10;
+  }
+  .tag {
+    display: inline-block; padding: 6px 16px; background: #ffdde3;
+    color: #ff5c7c; border-radius: 20px; font-size: 13px; font-weight: bold; margin-top: auto;
+  }
+  .favorite-list .tag { margin-top: 8px; padding: 4px 12px; font-size: 12px; }
+  .favorite-info { flex: 1; }
+
+  /* ===== (復元) リッチなプロフィール画面のデザイン ===== */
+  /* 詳細画面のコンテナを全画面仕様に */
+  #detailScreen {
+    padding: 0; 
+  }
+  .detail-screen-wrapper {
+    background: #fdfbf7;
+    min-height: 100%;
+    padding-bottom: 100px;
+  }
+
+  /* カバー画像 */
+  .profile-cover {
+    height: 180px;
+    background: linear-gradient(120deg, #89f7fe 0%, #66a6ff 100%);
+    position: relative;
+  }
+  
+  /* 戻るボタン（オーバーレイ） */
+  .detail-back-overlay {
+    position: absolute; top: 20px; left: 20px; width: 44px; height: 44px;
+    background: rgba(255,255,255,0.9); border-radius: 50%; display: flex;
+    align-items: center; justify-content: center; font-size: 24px; color: #333;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.15); cursor: pointer; z-index: 10; border: none;
+  }
+
+  /* アイコン */
+  .profile-avatar-wrapper {
+    width: 130px; height: 130px; border-radius: 50%; background: white;
+    position: absolute; bottom: -65px; left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; justify-content: center; font-size: 70px;
+    border: 5px solid white; box-shadow: 0 6px 15px rgba(0,0,0,0.1);
+  }
+
+  /* プロフィール情報 */
+  .profile-info-area {
+    margin-top: 75px; text-align: center; padding: 0 24px;
+  }
+  .profile-main-name { font-size: 30px; font-weight: 800; color: #1a1a1a; line-height: 1.2; margin-bottom: 4px; }
+  .profile-meta-row {
+    display: flex; justify-content: center; align-items: center; gap: 12px;
+    color: #666; font-size: 15px; margin-bottom: 20px;
+  }
+
+  /* 統計情報（Stats） */
+  .profile-stats-card {
+    display: flex; justify-content: space-around; padding: 20px; background: white;
+    border-radius: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.03); margin-bottom: 24px;
+    border: 1px solid #f0f0f0;
+  }
+  .stat-item { text-align: center; }
+  .stat-val { font-size: 20px; font-weight: 800; color: #333; }
+  .stat-label { font-size: 11px; font-weight: bold; color: #999; margin-top: 2px; }
+
+  /* コンテンツセクション */
+  .content-section { text-align: left; margin-bottom: 24px; }
+  .section-label {
+    font-size: 15px; font-weight: 800; color: #333; margin-bottom: 12px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .section-label::before { content: ''; display: block; width: 4px; height: 18px; background: #0066cc; border-radius: 2px; }
+  
+  .bio-text {
+    font-size: 16px; line-height: 1.8; color: #444; background: white;
+    padding: 20px; border-radius: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+    border: 1px solid #f0f0f0;
+  }
+
+  .tags-wrapper { display: flex; flex-wrap: wrap; gap: 10px; }
+  .skill-tag { background: #e6f0ff; color: #0066cc; padding: 8px 16px; border-radius: 30px; font-size: 14px; font-weight: bold; }
+  .hobby-tag { background: #f5f5f5; color: #555; padding: 8px 16px; border-radius: 30px; font-size: 14px; font-weight: bold; }
+
+  /* フッターアクション */
+  .profile-fixed-footer {
+    position: absolute; bottom: 0; left: 0; width: 100%;
+    background: rgba(255,255,255,0.95); backdrop-filter: blur(10px);
+    padding: 16px 24px 30px; box-shadow: 0 -5px 20px rgba(0,0,0,0.05);
+    z-index: 100; border-top: 1px solid #eee;
+  }
+  .action-main-btn {
+    width: 100%; padding: 18px; border-radius: 18px; font-size: 18px; font-weight: bold;
+    text-align: center; border: none; cursor: pointer; transition: transform 0.1s;
+    box-shadow: 0 5px 15px rgba(0, 102, 204, 0.2);
+  }
+  .action-main-btn:active { transform: scale(0.98); }
+  .btn-connect { background: #0066cc; color: white; }
+  .btn-connected { background: white; border: 3px solid #0066cc; color: #0066cc; }
+
+  /* ===== チャット関連 ===== */
+  .chat-list-item {
+    display: flex; align-items: center; padding: 16px; background: white;
+    border-radius: 20px; margin-bottom: 12px; cursor: pointer;
+    transition: background 0.2s; box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  }
+  .chat-list-item:active { background: #f0f0f0; }
+  .chat-list-icon {
+    width: 50px; height: 50px; border-radius: 50%; background: #eaf6ff;
+    display: flex; align-items: center; justify-content: center; font-size: 24px; margin-right: 16px;
+  }
+  .chat-list-content { flex: 1; }
+  .chat-list-name { font-weight: bold; font-size: 16px; color: #333; }
+  .chat-list-msg { color: #888; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* チャットルーム */
+  .chat-room-header {
+    background: #fff; padding: 16px; position: sticky; top: 0; z-index: 50;
+    display: flex; align-items: center; box-shadow: 0 4px 10px rgba(0,0,0,0.1); border-bottom: 1px solid #eee;
+  }
+  .chat-back-btn { font-size: 28px; color: #ff6b81; background: none; border: none; cursor: pointer; padding: 10px 20px 10px 0; font-weight: bold; }
+  #chatTargetName { font-size: 18px; }
+
+  .chat-messages { padding-bottom: 140px; }
+  .message-bubble {
+    max-width: 70%; padding: 12px 16px; border-radius: 18px; font-size: 15px;
+    line-height: 1.5; margin-bottom: 12px; position: relative;
+  }
+  .msg-received { align-self: flex-start; background: white; color: #333; border-bottom-left-radius: 4px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); margin-right: auto; }
+  .msg-sent { align-self: flex-end; background: #ff6b81; color: white; border-bottom-right-radius: 4px; box-shadow: 0 2px 5px rgba(255,107,129,0.3); margin-left: auto; }
+  
+  .chat-footer-area {
+    position: absolute; bottom: 0; left: 0; width: 100%;
+    background: white; box-shadow: 0 -2px 10px rgba(0,0,0,0.05); z-index: 90; padding-bottom: 10px;
+  }
+  .chat-action-bar { display: flex; padding: 8px 16px; background: #fff0f3; gap: 8px; overflow-x: auto; }
+  .action-btn {
+    background: white; border: 1px solid #ff6b81; color: #ff6b81; padding: 6px 12px;
+    border-radius: 20px; font-size: 13px; font-weight: bold; cursor: pointer; white-space: nowrap;
+  }
+  .action-btn-complete { background: #ff6b81; color: white; }
+  .chat-input-bar { padding: 10px 16px; display: flex; gap: 10px; }
+  .chat-input { flex: 1; background: #f0f0f0; border: none; border-radius: 24px; padding: 12px; outline: none; }
+  .chat-send-btn { background: #ff6b81; color: white; border: none; width: 44px; height: 44px; border-radius: 50%; font-size: 20px; cursor: pointer; }
+
+  .plan-card {
+    background: white; border: 2px solid #ff6b81; border-radius: 16px; padding: 0;
+    overflow: hidden; margin-top: 5px; width: 100%; max-width: 280px;
+  }
+  .plan-header { background: #ff6b81; color: white; padding: 8px 12px; font-weight: bold; font-size: 14px; }
+  .plan-body { padding: 12px; font-size: 15px; color: #333; }
+  .plan-row { margin-bottom: 8px; }
+  .plan-label { font-size: 12px; color: #666; font-weight: bold; }
+  .plan-value { font-weight: bold; font-size: 16px; }
+
+  /* ===== レビュー & マイページ & ショップ & メール ===== */
+  .review-container, .mypage-container {
+    text-align: center; padding: 20px; background: white; border-radius: 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+  }
+  .review-avatar {
+    width: 80px; height: 80px; background: #eee; border-radius: 50%; margin: 0 auto 16px;
+    display: flex; align-items: center; justify-content: center; font-size: 40px; border: 2px solid #ddd;
+  }
+  .star { font-size: 44px; color: #ddd; cursor: pointer; }
+  .star.active { color: #ffd700; }
+  .review-textarea {
+    width: 100%; padding: 16px; border: 2px solid #ccc; border-radius: 16px;
+    font-size: 16px; min-height: 100px; margin-bottom: 20px;
+  }
+  .coin-section { margin: 20px 0; padding: 16px; background: #fff9e6; border-radius: 16px; border: 2px solid #ffe066; }
+  .coin-title { font-weight: bold; color: #b38f00; margin-bottom: 12px; font-size: 18px; }
+  .coin-options { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .coin-btn {
+    padding: 8px 16px; border: 2px solid #ffd700; background: white; border-radius: 20px;
+    color: #b38f00; cursor: pointer; min-width: 60px;
+  }
+  .coin-btn.active { background: #ffd700; color: white; }
+  .coin-display { font-size: 28px; font-weight: bold; color: #e6ac00; }
+
+  #shopScreen .grid-container {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding-bottom: 80px;
+  }
+  .mail-item {
+    background: white; border-radius: 16px; padding: 16px; margin-bottom: 12px;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.05); display: flex; gap: 12px; align-items: flex-start;
+  }
+  .mail-icon { font-size: 24px; }
+  .mail-content { flex: 1; }
+  .mail-title { font-weight: bold; font-size: 16px; margin-bottom: 4px; }
+  .mail-body { font-size: 13px; color: #666; line-height: 1.5; }
+  .mail-time { font-size: 12px; color: #999; margin-top: 8px; text-align: right; }
+
+  /* ===== ヘッダーアイコン ===== */
+  .header-icons { position: absolute; top: 20px; right: 20px; z-index: 110; }
+  .mailbox-btn {
+    font-size: 24px; background: white; border-radius: 50%; width: 44px; height: 44px;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1); cursor: pointer; position: relative;
+  }
+  .notification-badge {
+    position: absolute; top: -2px; right: -2px; background: #ff4757; color: white;
+    font-size: 10px; width: 18px; height: 18px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  /* ===== モーダル ===== */
+  .modal-overlay {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.5); z-index: 2000;
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0; pointer-events: none; transition: opacity 0.3s;
+  }
+  .modal-overlay.open { opacity: 1; pointer-events: auto; }
+  .modal-content {
+    background: white; width: 90%; max-width: 360px; border-radius: 20px;
+    padding: 24px; box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+  }
+  .modal-title { font-size: 20px; font-weight: bold; text-align: center; margin-bottom: 20px; }
+  .modal-form-group { margin-bottom: 16px; }
+  .modal-label { display: block; font-weight: bold; margin-bottom: 6px; color: #444; }
+  .modal-input {
+    width: 100%; padding: 12px; border: 2px solid #ccc; border-radius: 12px;
+    font-size: 16px; background: #f9f9f9;
+  }
+  .modal-input:focus { border-color: #0066cc; outline: none; }
+  .modal-actions { display: flex; gap: 12px; margin-top: 24px; }
+  .modal-btn { flex: 1; padding: 14px; border-radius: 16px; font-weight: bold; font-size: 16px; cursor: pointer; border: none; }
+  .modal-btn-cancel { background: #eee; color: #444; }
+  .modal-btn-submit { background: #0066cc; color: white; }
+
+  /* トースト */
+  .toast {
+    position: absolute; top: 20px; left: 0; right: 0; margin: 0 auto;
+    width: fit-content; max-width: 90%;
+    background: #333; color: white; padding: 12px 20px; border-radius: 30px;
+    font-size: 14px; font-weight: bold; z-index: 3000; opacity: 0; transition: all 0.4s;
+  }
+  .toast.show { transform: translateY(0); opacity: 1; }
+
+</style>
+</head>
+
+<body>
+
+<div id="toast" class="toast">メッセージ</div>
+
+<!-- プラン相談モーダル -->
+<div id="planModal" class="modal-overlay">
+  <div class="modal-content">
+    <h2 class="modal-title">サポートプランの相談</h2>
+    <div class="modal-form-group">
+      <label class="modal-label">集合日時</label>
+      <input type="datetime-local" id="planDate" class="modal-input">
+    </div>
+    <div class="modal-form-group">
+      <label class="modal-label">集合場所</label>
+      <input type="text" id="planPlace" class="modal-input" placeholder="例：東京駅 丸の内北口">
+    </div>
+    <div class="modal-form-group">
+      <label class="modal-label">内容</label>
+      <input type="text" id="planTodo" class="modal-input" placeholder="例：買い物同行">
+    </div>
+    <div class="modal-actions">
+      <button class="modal-btn modal-btn-cancel" onclick="app.closePlanModal()">キャンセル</button>
+      <button class="modal-btn modal-btn-submit" onclick="app.submitPlan()">提案する</button>
+    </div>
+  </div>
+</div>
+
+<div class="container-app">
+
+  <!-- ヘッダーアイコン -->
+  <div id="headerIcons" class="header-icons hidden">
+    <div class="mailbox-btn" onclick="app.openMailbox()">
+      📬
+      <div id="mailBadge" class="notification-badge hidden">!</div>
+    </div>
+  </div>
+
+  <!-- 1. 名前入力画面 -->
+  <div id="welcomeScreen" class="screen active">
+    <div style="flex:1; display:flex; flex-direction:column; justify-content:center;">
+      <h1>Share My Sight<br><span style="font-size:16px; font-weight:normal;">視覚サポートマッチング</span></h1>
+      <p style="text-align:center; color:#444; margin-bottom:40px;">あなたの「見たい」を<br>手助けするパートナーを探しましょう</p>
+      <div class="input-group">
+        <label class="input-label">お名前（ニックネーム）</label>
+        <input type="text" id="userNameInput" class="text-input" placeholder="例：ヤマダ" oninput="app.checkNameInput()">
+      </div>
+      <button id="toHobbyBtn" class="primary-btn" onclick="app.goToRoleSelection()" disabled>次へ進む</button>
+    </div>
+  </div>
+
+  <!-- 1.5. ロール選択画面 -->
+  <div id="roleScreen" class="screen">
+    <div style="flex:1; display:flex; flex-direction:column; justify-content:center;">
+      <h1>利用方法の選択</h1>
+      <p style="text-align:center; color:#444; margin-bottom:30px;">どちらとして利用しますか？</p>
+      <button class="role-btn" onclick="app.selectRole('requester')">
+        <div class="role-btn-icon">👨‍🦯</div>
+        <div class="role-btn-text">
+          <span class="role-btn-title">サポートを希望する</span>
+          <span class="role-btn-desc">視覚サポート・同行援護を探す</span>
+        </div>
+      </button>
+      <button class="role-btn" onclick="app.selectRole('supporter')">
+        <div class="role-btn-icon">🤝</div>
+        <div class="role-btn-text">
+          <span class="role-btn-title">サポートを提供する</span>
+          <span class="role-btn-desc">お手伝いが必要な方を探す</span>
+        </div>
+      </button>
+      <button style="margin-top:20px; background:none; border:none; color:#666; text-decoration:underline;" onclick="app.backToWelcome()">戻る</button>
+    </div>
+  </div>
+
+  <!-- 2. 趣味選択画面 -->
+  <div id="hobbyScreen" class="screen">
+    <h1 id="hobbyTitle">こんにちは！</h1>
+    <p style="text-align:center; color:#666; margin-bottom:30px;">共通の話題があるサポーターを探します。<br>興味のあることを選んでください。</p>
+    <div id="hobbyGrid" class="hobby-grid"></div>
+    <div style="margin-top:auto;">
+      <button id="toMatchBtn" class="primary-btn" onclick="app.goToMatchScreen()" disabled>サポーターを探す</button>
+      <button style="width:100%; margin-top:16px; background:none; border:none; color:#666; padding:10px;" onclick="app.backToRoleSelection()">戻る</button>
+    </div>
+  </div>
+
+  <!-- 3. マッチング画面 (修正: 縦スクロール無効化、カード表示調整) -->
+  <div id="matchScreen" class="screen">
+    <h1 id="matchScreenTitle" style="margin-top:20px;">Share My Sight</h1>
+    <div class="match-header-text" id="matchHeaderText">おすすめのサポーター</div>
+    <!-- 横スクロールエリア -->
+    <div id="matchGrid" class="match-scroll-area"></div>
+    <div style="padding:20px; text-align:center; color:#666; font-size:14px; flex-shrink:0;">
+      <p id="matchFooterText">※ 気になるサポーターを選んで詳細を確認してください</p>
+    </div>
+  </div>
+
+  <!-- 4. フォローリスト画面 -->
+  <div id="favoriteScreen" class="screen">
+    <h1>リスト</h1>
+    <p style="text-align:center; color:#666; margin-bottom:20px;" id="favSubTitle">気になっている人</p>
+    <div id="favoriteGrid" class="favorite-list"></div>
+  </div>
+
+  <!-- 5. チャット一覧画面 -->
+  <div id="chatListScreen" class="screen">
+    <h1>メッセージ</h1>
+    <div id="chatListContainer"></div>
+  </div>
+
+  <!-- 6. チャットルーム画面 -->
+  <div id="chatRoomScreen" class="screen" style="padding:0; padding-bottom:0;">
+    <div class="chat-room-header">
+      <button class="chat-back-btn" onclick="app.backToChatList()">‹</button>
+      <div style="font-weight:bold; font-size:18px;" id="chatTargetName">相手の名前</div>
+    </div>
+    <div id="chatMessageArea" class="chat-messages" style="flex:1; overflow-y:auto; padding:20px;"></div>
+    
+    <div class="chat-footer-area">
+      <div class="chat-action-bar">
+        <button class="action-btn" onclick="app.openPlanModal()">📅 プラン相談</button>
+        <button id="completeBtn" class="action-btn action-btn-complete" onclick="app.openReview()">✅ 完了・評価</button>
+      </div>
+      <div class="chat-input-bar">
+        <input type="text" id="chatInput" class="chat-input" placeholder="メッセージ...">
+        <button class="chat-send-btn" onclick="app.sendMessage()">➤</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 7. 詳細画面 (リッチデザイン) -->
+  <div id="detailScreen" class="screen" style="padding:0;">
+    <div class="detail-screen-wrapper" id="detailContent">
+      <!-- JSで生成 -->
+    </div>
+  </div>
+
+  <!-- 8. 評価画面 -->
+  <div id="reviewScreen" class="screen">
+    <h1>サポートの評価</h1>
+    <p style="text-align:center; color:#666; margin-bottom:20px;">今回のサポートはいかがでしたか？</p>
+    <div class="review-container">
+      <div id="reviewTargetIcon" class="review-avatar">👤</div>
+      <h2 id="reviewTargetName" style="margin-bottom:20px;">Aさん</h2>
+      <div id="starRating" class="star-rating">
+        <span class="star" onclick="app.setRating(1)">★</span>
+        <span class="star" onclick="app.setRating(2)">★</span>
+        <span class="star" onclick="app.setRating(3)">★</span>
+        <span class="star" onclick="app.setRating(4)">★</span>
+        <span class="star" onclick="app.setRating(5)">★</span>
+      </div>
+      <div id="ratingText" style="text-align:center; font-weight:bold; color:#ff6b81; margin-bottom:20px;">評価を選択</div>
+      
+      <div class="coin-section">
+        <div class="coin-title">🪙 感謝のコインを贈る</div>
+        <div class="coin-options">
+          <button class="coin-btn" onclick="app.setCoin(0)">なし</button>
+          <button class="coin-btn" onclick="app.setCoin(100)">100</button>
+          <button class="coin-btn" onclick="app.setCoin(300)">300</button>
+          <button class="coin-btn" onclick="app.setCoin(500)">500</button>
+        </div>
+        <div id="coinAmountDisplay" class="coin-display" style="text-align:center;">0 枚</div>
+      </div>
+
+      <textarea id="reviewComment" class="review-textarea" placeholder="コメント..."></textarea>
+      <button class="primary-btn" onclick="app.submitReview()">評価を送信</button>
+      <button style="margin-top:20px; background:none; border:none; text-decoration:underline; color:#666;" onclick="app.cancelReview()">キャンセル</button>
+    </div>
+  </div>
+
+  <!-- 9. ショップ画面 -->
+  <div id="shopScreen" class="screen">
+    <h1>ポイント交換</h1>
+    <div style="background:#fff9e6; border:2px solid #ffe066; border-radius:16px; padding:20px; text-align:center; margin-bottom:24px;">
+      <div style="font-size:14px; color:#b38f00;">現在の保有コイン</div>
+      <div style="font-size:32px; font-weight:bold; color:#e6ac00;"><span id="shopCoinDisplay">0</span> <span style="font-size:16px;">枚</span></div>
+    </div>
+    <div class="grid-container" style="display:grid; grid-template-columns: 1fr 1fr; gap:16px; padding-bottom:80px;">
+      <div style="background:white; padding:16px; border-radius:16px; text-align:center; box-shadow:0 2px 8px rgba(0,0,0,0.05);">
+        <div style="font-size:40px;">☕</div>
+        <div style="font-weight:bold; margin:8px 0;">カフェチケット</div>
+        <div style="color:#e6ac00; font-weight:bold;">500 枚</div>
+        <button class="primary-btn" style="padding:8px; font-size:12px; margin-top:8px;" onclick="app.exchangeItem(500, 'カフェチケット')">交換</button>
+      </div>
+      <div style="background:white; padding:16px; border-radius:16px; text-align:center; box-shadow:0 2px 8px rgba(0,0,0,0.05);">
+        <div style="font-size:40px;">🎫</div>
+        <div style="font-weight:bold; margin:8px 0;">映画クーポン</div>
+        <div style="color:#e6ac00; font-weight:bold;">1000 枚</div>
+        <button class="primary-btn" style="padding:8px; font-size:12px; margin-top:8px;" onclick="app.exchangeItem(1000, '映画クーポン')">交換</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 10. メールボックス画面 -->
+  <div id="mailboxScreen" class="screen">
+    <h1>受信箱</h1>
+    <div id="mailboxList" class="mailbox-list"></div>
+    <button class="primary-btn" style="margin-top:20px; background:#999;" onclick="app.closeMailbox()">閉じる</button>
+  </div>
+
+  <!-- 11. マイページ画面 -->
+  <div id="myPageScreen" class="screen">
+    <h1>マイページ</h1>
+    <div class="mypage-container">
+      <div style="width:100px; height:100px; background:#eaf6ff; border-radius:50%; margin:0 auto 16px; display:flex; align-items:center; justify-content:center; font-size:50px;">👤</div>
+      <h2 id="myPageName" style="margin-bottom:8px;">ゲスト</h2>
+      <div style="display:inline-block; padding:4px 12px; background:#eee; border-radius:12px; font-size:12px; color:#555;" id="myPageRole">未設定</div>
+      
+      <div style="display:flex; justify-content:center; margin-top:20px; gap:20px;">
+        <div>
+          <div style="font-size:12px; color:#888;">保有コイン</div>
+          <div style="font-size:20px; font-weight:bold; color:#e6ac00;"><span id="myPageCoin">0</span> 枚</div>
+        </div>
+        <div style="border-left:1px solid #ddd;"></div>
+        <div>
+          <div style="font-size:12px; color:#888;">興味</div>
+          <div style="font-size:16px; font-weight:bold;" id="myPageHobby">-</div>
+        </div>
+      </div>
+    </div>
+    <button class="primary-btn" style="margin-top:24px; background:#fff; color:#333; border:2px solid #ccc;" onclick="app.showToast('ログアウトしました'); app.backToWelcome();">ログアウト</button>
+  </div>
+
+  <!-- ナビゲーションバー -->
+  <nav id="navBar" class="nav">
+    <div class="nav-item" id="navShop" onclick="app.goToShop()">
+      <span class="nav-icon">🎁</span>
+      <span class="nav-label">ショップ</span>
+    </div>
+    <div class="nav-item active" id="navSearch" onclick="app.goToMatchScreen()">
+      <span class="nav-icon">🔍</span>
+      <span class="nav-label">さがす</span>
+    </div>
+    <div class="nav-item" id="navHeart" onclick="app.goToFavorites()">
+      <span class="nav-icon">❤️</span>
+      <span class="nav-label">リスト</span>
+    </div>
+    <div class="nav-item" id="navChat" onclick="app.goToChatList()">
+      <span class="nav-icon">💬</span>
+      <span class="nav-label">トーク</span>
+    </div>
+    <div class="nav-item" id="navMyPage" onclick="app.goToMyPage()">
+      <span class="nav-icon">👤</span>
+      <span class="nav-label">マイページ</span>
+    </div>
+  </nav>
+
+</div>
+
+<script>
+const app = {
+  // ユーザーデータ
+  user: {
+    name: "",
+    hobby: "",
+    role: "requester", // 'requester' (利用者) or 'supporter' (一般人/ヘルパー)
+    coin: 1200
+  },
+  
+  chatHistory: {},
+  mailbox: [
+    {type:'system', title:'ようこそ！', body:'Share My Sightへようこそ。', date:'2023/10/01', claimed: true}
+  ],
+  followed: new Set(),
+  currentChatUser: null,
+  reviewTarget: null,
+  currentRating: 0,
+  currentCoin: 0,
+  targetList: [],
+  lastScreen: 'match',
+  toastTimer: null,
+
+  // データ
+  supporters: [
+    {name:"Aさん", age:"20代", location:"鳥取駅近辺", hobbies:["ゲーム","音楽"], icon: "🎮", skill:"同行援護・代読", desc:"休日はゲームが好きです。お買い物や散歩の同行援護が得意です。"},
+    {name:"Bさん", age:"30代", location:"大阪駅周辺", hobbies:["旅行","カフェ"], icon: "☕", skill:"ガイドヘルパー", desc:"カフェ巡りが趣味です。初めての場所へのお出かけもサポートします。"},
+    {name:"Cさん", age:"20代", location:"東京駅付近", hobbies:["運動","料理"], icon: "🍳", skill:"代筆・代読", desc:"料理と運動が好きです。書類の読み上げや代筆など、細かい作業もお任せください。"},
+    {name:"Dさん", age:"20代", location:"名古屋駅周辺", hobbies:["音楽","映画"], icon: "🎵", skill:"同行援護", desc:"音楽鑑賞が趣味です。ライブや映画館への同行もお手伝いできます。"},
+    {name:"Eさん", age:"30代", location:"博多駅近く", hobbies:["散歩","写真"], icon: "📷", skill:"ガイドヘルパー", desc:"写真を撮りながらの散歩が好きです。ゆっくりペースでの移動支援が得意です。"},
+    {name:"Fさん", age:"20代", location:"札幌駅周辺", hobbies:["ゲーム","カフェ"], icon: "👾", skill:"スマホ操作補助", desc:"カフェでのんびりするのが好きです。スマホの音声読み上げ設定などもお手伝いします。"},
+    {name:"Gさん", age:"30代", location:"仙台駅周辺", hobbies:["旅行","音楽"], icon: "🎸", skill:"同行援護", desc:"旅行が好きで色々な場所に行きます。安全に楽しく移動できるようサポートします。"},
+    {name:"Hさん", age:"20代", location:"横浜駅近く", hobbies:["映画","料理"], icon: "🎬", skill:"買い物同行", desc:"料理が好きなので、スーパーでの食材選びのお手伝いはお任せください。"}
+  ],
+  requesters: [
+    {name:"佐藤さん", age:"40代", location:"鳥取砂丘周辺", hobbies:["散歩"], icon: "👨‍🦯", skill:"移動支援希望", desc:"駅までの移動に不安があります。同行をお願いしたいです。"},
+    {name:"鈴木さん", age:"60代", location:"大阪駅周辺", hobbies:["旅行"], icon: "👩‍🦯", skill:"買い物同行希望", desc:"スーパーでの買い物をお手伝いしてほしいです。商品の表示が見えにくいので。"},
+    {name:"高橋さん", age:"20代", location:"新宿近辺", hobbies:["音楽"], icon: "🎧", skill:"ライブ同行希望", desc:"初めて行くライブハウスまでの誘導をお願いします。"},
+    {name:"田中さん", age:"50代", location:"博多駅近く", hobbies:["読書"], icon: "📚", skill:"代読希望", desc:"役所からの書類が届いたので、内容の読み上げと記入代行をお願いしたいです。"}
+  ],
+
+  // 画面遷移
+  showScreen: function(screenId) {
+    document.querySelectorAll('.screen').forEach(el => el.classList.remove('active'));
+    const target = document.getElementById(screenId);
+    if(target) {
+      target.classList.add('active');
+      target.scrollTop = 0;
+    }
+
+    const navBar = document.getElementById("navBar");
+    const headerIcons = document.getElementById("headerIcons");
+    const fullScreens = ['welcomeScreen', 'roleScreen', 'hobbyScreen', 'chatRoomScreen', 'reviewScreen', 'mailboxScreen', 'detailScreen'];
+    
+    if (fullScreens.includes(screenId)) {
+      navBar.classList.remove('active');
+      headerIcons.classList.add('hidden');
+    } else {
+      navBar.classList.add('active');
+      headerIcons.classList.remove('hidden');
+    }
+  },
+  
+  updateNav: function(activeId) {
+    document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+    if(activeId) document.getElementById(activeId).classList.add('active');
+  },
+
+  // 1. 名前入力
+  checkNameInput: function() {
+    const name = document.getElementById("userNameInput").value.trim();
+    const btn = document.getElementById("toHobbyBtn");
+    if(name.length > 0) {
+      btn.disabled = false;
+      btn.style.opacity = 1;
+      btn.style.pointerEvents = "auto";
+    } else {
+      btn.disabled = true;
+      btn.style.opacity = 0.6;
+      btn.style.pointerEvents = "none";
+    }
+  },
+  goToRoleSelection: function() {
+    const name = document.getElementById("userNameInput").value.trim();
+    if (!name) return;
+    this.user.name = name;
+    this.showScreen('roleScreen');
+  },
+
+  // 1.5 ロール選択
+  selectRole: function(role) {
+    this.user.role = role;
+    if (role === 'requester') {
+      this.targetList = this.supporters;
+      document.getElementById("hobbyTitle").textContent = `こんにちは、${this.user.name}さん！`;
+      this.renderHobbyGrid();
+      this.showScreen('hobbyScreen');
+    } else {
+      this.targetList = this.requesters;
+      document.getElementById("matchScreenTitle").textContent = "届いたリクエスト";
+      document.getElementById("matchHeaderText").textContent = "あなたのサポートを待っています";
+      const footer = document.getElementById("matchFooterText");
+      if(footer) footer.textContent = "詳細を確認して承認してください";
+      document.getElementById("favSubTitle").textContent = "承認待ちリスト";
+      this.renderMatches();
+      this.showScreen('matchScreen');
+      this.updateNav('navSearch');
+    }
+  },
+  backToWelcome: function() { this.showScreen('welcomeScreen'); },
+  backToRoleSelection: function() { this.showScreen('roleScreen'); },
+
+  // 2. 趣味選択
+  renderHobbyGrid: function() {
+    const grid = document.getElementById("hobbyGrid");
+    grid.innerHTML = "";
+    const allHobbies = new Set();
+    this.supporters.forEach(p => p.hobbies.forEach(h => allHobbies.add(h)));
+    Array.from(allHobbies).forEach(hobby => {
+      const btn = document.createElement("div");
+      btn.className = "hobby-choice";
+      btn.textContent = hobby;
+      btn.onclick = () => this.selectHobby(hobby, btn);
+      grid.appendChild(btn);
+    });
+  },
+  selectHobby: function(hobby, btnElement) {
+    this.user.hobby = hobby;
+    document.querySelectorAll('.hobby-choice').forEach(el => el.classList.remove('selected'));
+    btnElement.classList.add('selected');
+    document.getElementById("toMatchBtn").disabled = false;
+  },
+
+  // 3. マッチング
+  goToMatchScreen: function() {
+    this.renderMatches();
+    this.showScreen('matchScreen');
+    this.updateNav('navSearch');
+  },
+  renderMatches: function() {
+    const grid = document.getElementById("matchGrid");
+    grid.innerHTML = "";
+    let list = this.targetList;
+    
+    if (this.user.role === 'requester') {
+      const userHobby = this.user.hobby;
+      document.getElementById("matchHeaderText").textContent = `「${userHobby}」に関心があるサポーター`;
+      list = [...this.targetList].sort((a,b) => {
+        const aM = a.hobbies.includes(userHobby);
+        const bM = b.hobbies.includes(userHobby);
+        return bM - aM;
+      });
+    }
+
+    list.forEach(p => {
+      const isMatch = this.user.role === 'requester' && p.hobbies.includes(this.user.hobby);
+      const card = document.createElement("div");
+      card.className = `match-card ${isMatch ? 'best-match' : ''}`;
+      
+      let badgeHtml = isMatch ? `<div class="match-badge">話題が合います！</div>` : '';
+      if(this.user.role === 'supporter') badgeHtml = `<div class="match-badge">リクエスト</div>`;
+      
+      const color = this.user.role === 'supporter' ? '#ff6b81' : '#0066cc';
+
+      card.innerHTML = `
+        ${badgeHtml}
+        <div class="card-img-placeholder">${p.icon}</div>
+        <h2>${p.name} <span style="font-size:16px; color:#666;">(${p.age})</span></h2>
+        <p style="color:${color}; font-weight:bold; margin:4px 0;">${p.skill}</p>
+        <p style="color:#666; font-size:14px;">📍 ${p.location}</p>
+        <div class="tag">${p.hobbies[0]}</div>
+      `;
+      card.onclick = () => this.showDetail(p);
+      grid.appendChild(card);
+    });
+  },
+
+  // 4. お気に入り
+  goToFavorites: function() {
+    this.renderFavorites();
+    this.showScreen('favoriteScreen');
+    this.updateNav('navHeart');
+  },
+  renderFavorites: function() {
+    const grid = document.getElementById("favoriteGrid");
+    grid.innerHTML = "";
+    const list = this.targetList.filter(p => this.followed.has(p.name));
+    
+    if (list.length === 0) {
+      grid.innerHTML = `<div style="text-align:center; padding:40px; color:#999;">リストは空です</div>`;
+      return;
+    }
+    
+    const color = this.user.role === 'supporter' ? '#ff6b81' : '#0066cc';
+    list.forEach(p => {
+      const card = document.createElement("div");
+      card.className = "match-card";
+      card.innerHTML = `
+        <div style="display:flex; align-items:center; width:100%; text-align:left;">
+          <div style="font-size:30px; margin-right:16px; background:#cce7ff; width:50px; height:50px; display:flex; align-items:center; justify-content:center; border-radius:50%;">${p.icon}</div>
+          <div style="flex:1;">
+            <div style="font-weight:bold;">${p.name}</div>
+            <div style="font-size:12px; color:${color}; font-weight:bold;">${p.skill}</div>
+          </div>
+          <div style="font-size:20px; color:#ccc;">›</div>
+        </div>
+      `;
+      card.onclick = () => this.showDetail(p);
+      grid.appendChild(card);
+    });
+  },
+
+  // 5. チャット一覧
+  goToChatList: function() {
+    this.renderChatList();
+    this.showScreen('chatListScreen');
+    this.updateNav('navChat');
+  },
+  renderChatList: function() {
+    const container = document.getElementById("chatListContainer");
+    container.innerHTML = "";
+    const list = this.targetList.filter(p => this.followed.has(p.name));
+    
+    if (list.length === 0) {
+      container.innerHTML = `<div style="text-align:center; padding:40px; color:#999;">メッセージはありません</div>`;
+      return;
+    }
+    
+    list.forEach(p => {
+      const item = document.createElement("div");
+      item.className = "chat-list-item";
+      item.onclick = () => this.openChat(p);
+      item.innerHTML = `
+        <div class="chat-list-icon">${p.icon}</div>
+        <div class="chat-list-content">
+          <div class="chat-list-name">${p.name}</div>
+          <div class="chat-list-msg">こんにちは！</div>
+        </div>
+        <div style="font-size:12px; color:#999;">Now</div>
+      `;
+      container.appendChild(item);
+    });
+  },
+
+  // 6. チャットルーム
+  openChat: function(p) {
+    this.currentChatUser = p;
+    document.getElementById("chatTargetName").textContent = p.name;
+    this.showScreen('chatRoomScreen');
+    
+    const completeBtn = document.getElementById("completeBtn");
+    if (this.user.role === 'supporter') {
+      completeBtn.style.display = 'none';
+      setTimeout(() => { this.receiveRewardSimulation(p.name); }, 5000);
+    } else {
+      completeBtn.style.display = 'flex';
+    }
+
+    const area = document.getElementById("chatMessageArea");
+    area.innerHTML = "";
+    
+    if (!this.chatHistory[p.name]) {
+      let initMsg = "";
+      if (this.user.role === 'requester') {
+        initMsg = `こんにちは！マッチングありがとうございます。\n${p.skill}が可能です。何かお手伝いできることはありますか？`;
+      } else {
+        initMsg = `こんにちは！リクエストの承認ありがとうございます。\n「${p.skill}」をお願いしたいのですが、よろしいでしょうか？`;
+      }
+      this.chatHistory[p.name] = [
+        { type: 'system', html: `<div style="text-align:center; color:#999; font-size:12px; margin-bottom:10px;">${p.name}さんとつながりました</div>` },
+        { type: 'received', text: initMsg }
+      ];
+    }
+    
+    this.chatHistory[p.name].forEach(msg => this.renderMessage(msg, area));
+    setTimeout(() => { area.scrollTop = area.scrollHeight; }, 100);
+  },
+
+  renderMessage: function(msg, container) {
+    const div = document.createElement('div');
+    if (msg.type === 'system') {
+      div.innerHTML = msg.html;
+    } else {
+      div.className = msg.type === 'sent' ? "message-bubble msg-sent" : "message-bubble msg-received";
+      if(msg.html) div.innerHTML = msg.html;
+      else div.innerText = msg.text;
+    }
+    container.appendChild(div);
+  },
+
+  sendMessage: function() {
+    const input = document.getElementById("chatInput");
+    const text = input.value.trim();
+    if (!text) return;
+    const targetName = this.currentChatUser.name;
+    const area = document.getElementById("chatMessageArea");
+    const msgData = { type: 'sent', text: text };
+    if(!this.chatHistory[targetName]) this.chatHistory[targetName] = [];
+    this.chatHistory[targetName].push(msgData);
+    this.renderMessage(msgData, area);
+    input.value = "";
+    area.scrollTop = area.scrollHeight;
+    
+    setTimeout(() => {
+      const reply = { type: 'received', text: "了解しました！" };
+      this.chatHistory[targetName].push(reply);
+      if(this.currentChatUser && this.currentChatUser.name === targetName) {
+        this.renderMessage(reply, area);
+        area.scrollTop = area.scrollHeight;
+      }
+    }, 1000);
+  },
+  
+  backToChatList: function() {
+    this.currentChatUser = null;
+    this.goToChatList();
+  },
+
+  openPlanModal: function() {
+    document.getElementById("planModal").classList.add("open");
+  },
+  closePlanModal: function() {
+    document.getElementById("planModal").classList.remove("open");
+  },
+  submitPlan: function() {
+    const date = document.getElementById("planDate").value;
+    const place = document.getElementById("planPlace").value;
+    const todo = document.getElementById("planTodo").value;
+    if(!date || !place || !todo) { this.showToast("全て入力してください"); return; }
+    
+    const targetName = this.currentChatUser.name;
+    const area = document.getElementById("chatMessageArea");
+    const html = `
+      <div class="plan-card">
+        <div class="plan-header">📅 提案</div>
+        <div class="plan-body">
+          <div><b>日時:</b> ${date}</div>
+          <div><b>場所:</b> ${place}</div>
+          <div><b>内容:</b> ${todo}</div>
+        </div>
+      </div>
+    `;
+    const msg = { type: 'sent', html: html };
+    if(!this.chatHistory[targetName]) this.chatHistory[targetName] = [];
+    this.chatHistory[targetName].push(msg);
+    this.renderMessage(msg, area);
+    this.closePlanModal();
+    area.scrollTop = area.scrollHeight;
+  },
+
+  // ===== (復元) リッチプロフィール詳細表示 =====
+  showDetail: function(p) {
+    this.showScreen('detailScreen');
+    
+    // ロールごとの色設定
+    const skillColor = this.user.role === 'requester' ? '#0066cc' : '#ff6b81';
+    
+    // マッチメッセージ
+    let matchMsg = '';
+    if (this.user.role === 'requester' && p.hobbies.includes(this.user.hobby)) {
+      matchMsg = `<div style="text-align:center; color:#0066cc; font-weight:bold; margin-bottom:16px;">✨ ${this.user.hobby}の話で盛り上がれます！</div>`;
+    }
+
+    const isFollowed = this.followed.has(p.name);
+    const btnClass = isFollowed ? 'action-main-btn btn-connected' : 'action-main-btn btn-connect';
+    let btnText = isFollowed ? '✔ 接続中（チャット可能）' : (this.user.role === 'requester' ? '＋ フォローして相談する' : '＋ リクエストを承認する');
+    
+    // HTML構築 (復元したリッチレイアウト)
+    const html = `
+      <button class="detail-back-overlay" onclick="app.goBackFromDetail()">‹</button>
+      <div class="profile-cover">
+        <div class="profile-avatar-wrapper">${p.icon}</div>
+      </div>
+      
+      <div class="profile-info-area">
+        <div class="profile-main-name">${p.name} <span style="font-size:18px; font-weight:normal; color:#666;">(${p.age})</span></div>
+        <div class="profile-meta-row">
+          <span>📍 ${p.location}</span>
+        </div>
+        
+        ${matchMsg}
+
+        <div class="profile-stats-card">
+          <div class="stat-item">
+            <div class="stat-val">4.9</div>
+            <div class="stat-label">評価</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-val">12</div>
+            <div class="stat-label">サポート数</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-val" style="color:${skillColor};">${p.skill}</div>
+            <div class="stat-label">タイプ</div>
+          </div>
+        </div>
+
+        <div class="content-section">
+          <div class="section-label">興味・関心</div>
+          <div class="tags-wrapper">
+            ${p.hobbies.map(h => `<span class="hobby-tag">${h}</span>`).join('')}
+          </div>
+        </div>
+
+        <div class="content-section">
+          <div class="section-label">自己紹介</div>
+          <div class="bio-text">${p.desc}</div>
+        </div>
+      </div>
+
+      <div class="profile-fixed-footer">
+        <button id="followBtn" class="${btnClass}" onclick="app.toggleFollow('${p.name}')">${btnText}</button>
+      </div>
+    `;
+    
+    document.getElementById("detailContent").innerHTML = html;
+  },
+  
+  goBackFromDetail: function() {
+    if (this.lastScreen === 'favorite') this.goToFavorites();
+    else if (this.lastScreen === 'chatList') this.goToChatList();
+    else if (this.lastScreen === 'shop') this.goToShop();
+    else if (this.lastScreen === 'mypage') this.goToMyPage();
+    else this.goToMatchScreen();
+  },
+
+  toggleFollow: function(targetName) {
+    const btn = document.getElementById("followBtn");
+    if (this.followed.has(targetName)) {
+      this.followed.delete(targetName);
+      btn.classList.remove('btn-connected');
+      btn.classList.add('btn-connect');
+      const btnText = this.user.role === 'requester' ? '＋ フォローして相談する' : '＋ リクエストを承認する';
+      btn.innerHTML = btnText;
+      this.showToast(`「${targetName}」さんとの接続を解除しました`);
+    } else {
+      this.followed.add(targetName);
+      btn.classList.remove('btn-connect');
+      btn.classList.add('btn-connected');
+      btn.innerHTML = "✔ 接続中（チャット可能）";
+      this.showToast("接続しました！チャット可能です");
+    }
+  },
+
+  // 評価・コイン・メール
+  receiveRewardSimulation: function(senderName) {
+    if (this.user.role !== 'supporter') return;
+    const exists = this.mailbox.some(m => m.title.includes(senderName));
+    if(exists) return;
+    
+    this.showToast("新着メッセージがあります！");
+    document.getElementById("mailBadge").classList.remove("hidden");
+    this.mailbox.unshift({
+      type: 'reward',
+      title: '評価完了',
+      body: `${senderName}さんから評価が届きました。\nタップして500コインを受け取ってください。`,
+      coin: 500,
+      date: new Date().toLocaleDateString(),
+      claimed: false
+    });
+  },
+
+  openReview: function() {
+    this.showScreen('reviewScreen');
+    document.getElementById("reviewTargetName").textContent = this.currentChatUser.name + "さん";
+    document.getElementById("reviewTargetIcon").textContent = this.currentChatUser.icon;
+    this.currentCoin = 0;
+    this.setCoin(0);
+  },
+  setRating: function(r) {
+    document.querySelectorAll('.star').forEach((s,i) => s.className = i < r ? 'star active' : 'star');
+  },
+  setCoin: function(n) {
+    this.currentCoin = n;
+    document.querySelectorAll('.coin-btn').forEach(b => {
+      if((n===0 && b.textContent==="なし") || b.textContent==n) b.classList.add('active');
+      else b.classList.remove('active');
+    });
+    document.getElementById("coinAmountDisplay").textContent = n + " 枚";
+  },
+  cancelReview: function() { this.showScreen('chatRoomScreen'); },
+  submitReview: function() {
+    if(this.currentCoin > 0) {
+      if(this.user.coin < this.currentCoin) { this.showToast("コイン不足です"); return; }
+      this.user.coin -= this.currentCoin;
+    }
+    this.showToast("評価を送信しました！");
+    const name = this.currentChatUser.name;
+    delete this.chatHistory[name];
+    this.followed.delete(name);
+    setTimeout(() => this.goToMatchScreen(), 1500);
+  },
+
+  openMailbox: function() {
+    this.showScreen('mailboxScreen');
+    document.getElementById("mailBadge").classList.add("hidden");
+    const list = document.getElementById("mailboxList");
+    list.innerHTML = "";
+    this.mailbox.forEach((m, idx) => {
+      const div = document.createElement("div");
+      div.className = "mail-item";
+      let statusHtml = "";
+      if(m.type === 'reward') {
+        if(m.claimed) {
+          div.style.background = "#f9f9f9";
+          statusHtml = `<div style="font-size:12px; color:#999;">受取済み</div>`;
+        } else {
+          div.style.background = "#fff9e6";
+          div.style.border = "2px solid #ffd700";
+          statusHtml = `<div style="font-size:12px; color:#e6ac00; font-weight:bold;">タップして受取</div>`;
+          div.onclick = () => {
+            this.user.coin += m.coin;
+            m.claimed = true;
+            this.showToast(`${m.coin}コイン獲得！`);
+            this.openMailbox();
+          };
+        }
+      }
+      div.innerHTML = `
+        <div class="mail-icon">${m.type==='reward' ? '🎁' : '📢'}</div>
+        <div class="mail-content">
+          <div class="mail-title">${m.title}</div>
+          <div class="mail-body">${m.body.replace(/\n/g, '<br>')}</div>
+          ${statusHtml}
+          <div class="mail-time">${m.date}</div>
+        </div>
+      `;
+      list.appendChild(div);
+    });
+  },
+  closeMailbox: function() { this.goToMatchScreen(); },
+
+  goToShop: function() {
+    this.showScreen('shopScreen');
+    this.updateNav('navShop');
+    document.getElementById("shopCoinDisplay").textContent = this.user.coin.toLocaleString();
+  },
+  exchangeItem: function(cost, name) {
+    if(this.user.coin >= cost) {
+      this.user.coin -= cost;
+      this.goToShop();
+      this.showToast(`${name}と交換しました`);
+    } else {
+      this.showToast("コインが足りません");
+    }
+  },
+
+  goToMyPage: function() {
+    this.showScreen('myPageScreen');
+    this.updateNav('navMyPage');
+    document.getElementById("myPageName").textContent = this.user.name || "ゲスト";
+    document.getElementById("myPageRole").textContent = this.user.role === 'requester' ? "利用者" : "サポーター";
+    document.getElementById("myPageCoin").textContent = this.user.coin.toLocaleString();
+    document.getElementById("myPageHobby").textContent = this.user.hobby || "未設定";
+  },
+
+  showToast: function(msg) {
+    const t = document.getElementById("toast");
+    t.textContent = msg;
+    t.classList.add("show");
+    if(this.toastTimer) clearTimeout(this.toastTimer);
+    this.toastTimer = setTimeout(() => t.classList.remove("show"), 3000);
+  }
+};
+
+window.onload = function() {
+  app.checkNameInput();
+  app.showScreen('welcomeScreen'); 
+};
+</script>
+</body>
+</html>
